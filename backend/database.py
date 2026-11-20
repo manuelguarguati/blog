@@ -27,7 +27,8 @@ def load_env():
 
 load_env()
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./blog.db")
+NEON_DATABASE_URL = "postgresql+psycopg2://neondb_owner:npg_QRpKfD5P2NbX@ep-tiny-voice-bey0v8h3-pooler.c-9.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+DATABASE_URL = os.getenv("DATABASE_URL") or NEON_DATABASE_URL
 
 # Ensure SQLAlchemy uses psycopg2 driver for PostgreSQL
 if DATABASE_URL.startswith("postgres://"):

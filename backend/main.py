@@ -280,3 +280,12 @@ async def upload_media(file: UploadFile = File(...)):
         "type": media_type,
         "filename": file.filename
     }
+
+# Mount static React frontend if built
+FRONTEND_DIST = os.path.join(os.path.dirname(__file__), "frontend_dist")
+if not os.path.exists(FRONTEND_DIST):
+    FRONTEND_DIST = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend", "dist"))
+
+if os.path.exists(FRONTEND_DIST):
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+
