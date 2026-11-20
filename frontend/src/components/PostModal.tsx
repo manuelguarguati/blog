@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Eye, Heart, MessageCircle, Share2, Sparkles, Send, Check } from 'lucide-react';
+import { X, Eye, Heart, MessageCircle, Share2, Sparkles, Send, Check, Trash2 } from 'lucide-react';
 import type { Post, Comment } from '../types';
 import { resolveMediaUrl, likePost, fetchComments, submitComment } from '../api';
 
@@ -7,11 +7,13 @@ interface PostModalProps {
   post: Post | null;
   onClose: () => void;
   onPostUpdated?: (updated: Post) => void;
+  isOwner?: boolean;
+  onDelete?: (id: number) => void;
 }
 
 const AVATAR_OPTIONS = ['🌸', '✨', '☕', '🎀', '🌿', '🧸', '💛', '🌷'];
 
-export const PostModal: React.FC<PostModalProps> = ({ post, onClose, onPostUpdated }) => {
+export const PostModal: React.FC<PostModalProps> = ({ post, onClose, onPostUpdated, isOwner, onDelete }) => {
   if (!post) return null;
 
   const [likes, setLikes] = useState(post.likes_count);
@@ -116,12 +118,29 @@ export const PostModal: React.FC<PostModalProps> = ({ post, onClose, onPostUpdat
             </div>
           </div>
 
-          <button
-            onClick={onClose}
-            className="w-9 h-9 rounded-full bg-[#F5ECE5] hover:bg-[#EADBCE] text-[#635350] flex items-center justify-center transition-colors"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            {isOwner && (
+              <button
+                onClick={() => {
+                  if (onDelete && window.confirm(`¿Estás segura de eliminar "${post.title}"?`)) {
+                    onDelete(post.id);
+                    onClose();
+                  }
+                }}
+                title="Eliminar publicación"
+                className="w-9 h-9 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+
+            <button
+              onClick={onClose}
+              className="w-9 h-9 rounded-full bg-[#F5ECE5] hover:bg-[#EADBCE] text-[#635350] flex items-center justify-center transition-colors"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Body */}

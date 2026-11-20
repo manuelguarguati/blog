@@ -4,6 +4,39 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
 from database import Base
 
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), default="María Bibiana (Bibi)")
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    role = Column(String(50), default="owner")  # owner / admin
+    avatar = Column(String(50), default="🌸")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    tokens = relationship("SessionToken", back_populates="user", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "email": self.email,
+            "role": self.role,
+            "avatar": self.avatar,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+class SessionToken(Base):
+    __tablename__ = "session_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String(255), unique=True, index=True, nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="tokens")
+
 class Post(Base):
     __tablename__ = "posts"
 

@@ -34,3 +34,16 @@ export interface SiteStats {
   total_posts: number;
   total_comments: number;
 }
+
+export interface User {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  avatar: string;
+}
+
+export interface AuthResponse {
+  user: User;
+  token: string;
+}

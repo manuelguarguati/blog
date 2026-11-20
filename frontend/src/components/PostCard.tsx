@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
-import { Eye, Heart, MessageCircle, Play, Image as ImageIcon } from 'lucide-react';
+import { Eye, Heart, MessageCircle, Play, Image as ImageIcon, Trash2 } from 'lucide-react';
 import type { Post } from '../types';
 import { resolveMediaUrl, likePost } from '../api';
 
 interface PostCardProps {
   post: Post;
   onClick: () => void;
+  isOwner?: boolean;
+  onDelete?: (id: number) => void;
 }
 
-export const PostCard: React.FC<PostCardProps> = ({ post, onClick }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, onClick, isOwner, onDelete }) => {
   const [likes, setLikes] = useState(post.likes_count);
   const [liked, setLiked] = useState(false);
   const [isLiking, setIsLiking] = useState(false);
@@ -28,6 +30,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick }) => {
       console.error(err);
     } finally {
       setIsLiking(false);
+    }
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete && window.confirm(`¿Estás segura de eliminar "${post.title}"?`)) {
+      onDelete(post.id);
     }
   };
 
@@ -54,7 +63,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick }) => {
   return (
     <article
       onClick={onClick}
-      className="group bg-[#FFFDF9] rounded-3xl border border-[#EFE5DC] overflow-hidden shadow-xs hover:shadow-md transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col h-full"
+      className="group bg-[#FFFDF9] rounded-3xl border border-[#EFE5DC] overflow-hidden shadow-xs hover:shadow-md transition-all duration-300 hover:-translate-y-1 cursor-pointer flex flex-col h-full relative"
     >
       {/* Cover Media */}
       <div className="relative aspect-[16/10] overflow-hidden bg-[#F0E6DE]">
@@ -64,6 +73,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onClick }) => {
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ease-out"
           loading="lazy"
         />
+
+        {/* Delete button (Owner only) */}
+        {isOwner && (
+          <button
+            onClick={handleDelete}
+            title="Eliminar publicación"
+            className="absolute top-3 left-3 w-8 h-8 rounded-full bg-rose-600/80 hover:bg-rose-700 text-white flex items-center justify-center transition-colors shadow-sm z-10"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </button>
+        )}
 
         {/* Media Badges */}
         <div className="absolute top-3 right-3 flex items-center space-x-1.5">

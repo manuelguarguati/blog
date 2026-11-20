@@ -4,8 +4,17 @@ import { Hero } from './components/Hero';
 import { PostCard } from './components/PostCard';
 import { PostModal } from './components/PostModal';
 import { NewPostModal } from './components/NewPostModal';
-import type { Post, SiteStats } from './types';
-import { fetchPosts, fetchStats, fetchPostDetail } from './api';
+import { AuthModal } from './components/AuthModal';
+import type { Post, SiteStats, User } from './types';
+import {
+  fetchPosts,
+  fetchStats,
+  fetchPostDetail,
+  getStoredUser,
+  fetchMe,
+  logoutAuthor,
+  deletePost,
+} from './api';
 import { Plus, Heart } from 'lucide-react';
 
 export function App() {
@@ -16,6 +25,15 @@ export function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activePost, setActivePost] = useState<Post | null>(null);
   const [isNewPostOpen, setIsNewPostOpen] = useState(false);
+  const [isAuthOpen, setIsAuthOpen] = useState(false);
+  const [user, setUser] = useState<User | null>(getStoredUser());
+
+  // Check and refresh session on mount
+  useEffect(() => {
+    fetchMe()
+      .then((currUser) => setUser(currUser))
+      .catch(() => setUser(null));
+  }, []);
 
   // Load stats once on mount
   useEffect(() => {
@@ -48,7 +66,6 @@ export function App() {
     try {
       const detailed = await fetchPostDetail(post.id);
       setActivePost(detailed);
-      // update post views in list
       setPosts((prev) =>
         prev.map((p) => (p.id === post.id ? { ...p, views_count: detailed.views_count } : p))
       );
@@ -71,12 +88,43 @@ export function App() {
     }
   };
 
+  const handleDeletePost = async (id: number) => {
+    try {
+      await deletePost(id);
+      setPosts((prev) => prev.filter((p) => p.id !== id));
+      if (stats) {
+        setStats({ ...stats, total_posts: Math.max(0, stats.total_posts - 1) });
+      }
+      if (activePost?.id === id) {
+        setActivePost(null);
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error al eliminar artículo');
+    }
+  };
+
+  const handleLogout = async () => {
+    await logoutAuthor();
+    setUser(null);
+  };
+
+  const handleTriggerNewPost = () => {
+    if (!user) {
+      setIsAuthOpen(true);
+    } else {
+      setIsNewPostOpen(true);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#FAF7F2] text-[#4A3E3D] flex flex-col font-sans">
       {/* Navigation */}
       <Navbar
         stats={stats}
-        onOpenNewPost={() => setIsNewPostOpen(true)}
+        user={user}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={handleLogout}
+        onOpenNewPost={handleTriggerNewPost}
         selectedCategory={selectedCategory}
         onSelectCategory={setSelectedCategory}
       />
@@ -137,11 +185,11 @@ export function App() {
                 : 'Sé la primera en escribir una historia con fotos y videos.'}
             </p>
             <button
-              onClick={() => setIsNewPostOpen(true)}
+              onClick={handleTriggerNewPost}
               className="inline-flex items-center space-x-2 bg-[#D88D96] text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:bg-[#C97A88]"
             >
               <Plus className="w-4 h-4" />
-              <span>Publicar algo nuevo</span>
+              <span>{user ? 'Publicar algo nuevo' : 'Iniciar sesión para publicar'}</span>
             </button>
           </div>
         ) : (
@@ -152,6 +200,8 @@ export function App() {
                 key={post.id}
                 post={post}
                 onClick={() => handleOpenPost(post)}
+                isOwner={!!user}
+                onDelete={handleDeletePost}
               />
             ))}
           </div>
@@ -161,7 +211,7 @@ export function App() {
       {/* Floating Action Button (Mobile) */}
       <div className="fixed bottom-6 right-6 sm:hidden z-30">
         <button
-          onClick={() => setIsNewPostOpen(true)}
+          onClick={handleTriggerNewPost}
           className="w-13 h-13 rounded-full bg-[#D88D96] text-white shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-transform"
         >
           <Plus className="w-6 h-6" />
@@ -173,12 +223,20 @@ export function App() {
         post={activePost}
         onClose={() => setActivePost(null)}
         onPostUpdated={handlePostUpdated}
+        isOwner={!!user}
+        onDelete={handleDeletePost}
       />
 
       <NewPostModal
         isOpen={isNewPostOpen}
         onClose={() => setIsNewPostOpen(false)}
         onPostCreated={handlePostCreated}
+      />
+
+      <AuthModal
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onSuccess={(loggedUser) => setUser(loggedUser)}
       />
 
       {/* Footer */}

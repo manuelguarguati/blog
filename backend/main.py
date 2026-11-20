@@ -3,16 +3,17 @@ import json
 import uuid
 import shutil
 from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 from database import engine, Base, get_db, SessionLocal
-from models import Post, Comment, SiteStat
+from models import Post, Comment, SiteStat, User, SessionToken
+from auth import hash_password, verify_password, generate_token
 
-# Create tables
+# Create tables in database (Neon Postgres or SQLite)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Bibi Blog API", version="1.0.0")
@@ -44,6 +45,30 @@ class PostCreate(BaseModel):
     category: str = "Reflexiones"
     cover_image: Optional[str] = ""
     media: Optional[List[dict]] = []
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+# Auth dependency
+def get_current_user(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+) -> User:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Acceso restringido solo para la autora (Bibi). Por favor inicia sesión.")
+    
+    token_str = authorization.replace("Bearer ", "").strip()
+    session = db.query(SessionToken).filter(SessionToken.token == token_str).first()
+    if not session or not session.user:
+        raise HTTPException(status_code=401, detail="Tu sesión ha expirado o es inválida.")
+    
+    return session.user
 
 # Seed initial posts if empty
 def seed_initial_data(db: Session):
@@ -142,19 +167,90 @@ Que todo lo bueno te encuentre, te abrace y se quede contigo hoy y siempre. 🌟
         db.add_all(initial_posts)
         db.commit()
 
-        # Add sample comments
-        post1 = db.query(Post).filter(Post.id == 1).first()
-        if post1:
-            c1 = Comment(post_id=post1.id, author_name="Camila R.", avatar="🌸", content="¡Me encantaron los tips! Justo estaba buscando recomendaciones de lapiceros.")
-            c2 = Comment(post_id=post1.id, author_name="Sofía M.", avatar="✨", content="¡Qué lindo queda todo organizado! Amé este nuevo blog Bibi 🥰")
-            db.add_all([c1, c2])
-            db.commit()
-
 # Run seed on startup
 with SessionLocal() as db:
     seed_initial_data(db)
 
-# Routes
+# ----------------- AUTHENTICATION ROUTES ----------------- #
+
+@app.get("/api/auth/status")
+def auth_status(db: Session = Depends(get_db)):
+    """Check if owner account has been registered."""
+    owner_exists = db.query(User).count() > 0
+    return {"owner_registered": owner_exists}
+
+@app.post("/api/auth/register")
+def register(data: RegisterRequest, db: Session = Depends(get_db)):
+    """Register Bibi as the exclusive owner of the blog."""
+    email_clean = data.email.strip().lower()
+    if not email_clean or "@" not in email_clean:
+        raise HTTPException(status_code=400, detail="Por favor ingresa un correo electrónico válido.")
+    
+    if len(data.password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres.")
+
+    existing_user = db.query(User).filter(User.email == email_clean).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Ya existe una cuenta con este correo. Inicia sesión.")
+
+    # Only one owner can be created
+    total_users = db.query(User).count()
+    if total_users >= 1:
+        raise HTTPException(status_code=403, detail="Este blog es de uso personal y exclusivo para María Bibiana.")
+
+    user = User(
+        name=data.name.strip() or "María Bibiana (Bibi)",
+        email=email_clean,
+        hashed_password=hash_password(data.password),
+        role="owner",
+        avatar="🌸"
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    # Generate session token
+    token = generate_token()
+    session = SessionToken(token=token, user_id=user.id)
+    db.add(session)
+    db.commit()
+
+    return {"user": user.to_dict(), "token": token}
+
+@app.post("/api/auth/login")
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    """Log in as Bibi."""
+    email_clean = data.email.strip().lower()
+    user = db.query(User).filter(User.email == email_clean).first()
+    if not user or not verify_password(data.password, user.hashed_password):
+        raise HTTPException(status_code=400, detail="Correo o contraseña incorrectos.")
+
+    # Generate new session token
+    token = generate_token()
+    session = SessionToken(token=token, user_id=user.id)
+    db.add(session)
+    db.commit()
+
+    return {"user": user.to_dict(), "token": token}
+
+@app.get("/api/auth/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    """Get currently logged-in user."""
+    return current_user.to_dict()
+
+@app.post("/api/auth/logout")
+def logout(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    if authorization and authorization.startswith("Bearer "):
+        token_str = authorization.replace("Bearer ", "").strip()
+        db.query(SessionToken).filter(SessionToken.token == token_str).delete()
+        db.commit()
+    return {"message": "Sesión cerrada correctamente"}
+
+# ----------------- BLOG ROUTES (PUBLIC & PROTECTED) ----------------- #
+
 @app.get("/api/stats")
 def get_stats(db: Session = Depends(get_db)):
     stat = db.query(SiteStat).first()
@@ -164,7 +260,6 @@ def get_stats(db: Session = Depends(get_db)):
         db.commit()
         db.refresh(stat)
     
-    # Increment visit
     stat.total_visits += 1
     db.commit()
 
@@ -199,7 +294,6 @@ def get_post(post_id: int, db: Session = Depends(get_db)):
     if not post:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
     
-    # Increment view counter
     post.views_count += 1
     db.commit()
     return post.to_dict()
@@ -220,6 +314,7 @@ def get_comments(post_id: int, db: Session = Depends(get_db)):
 
 @app.post("/api/posts/{post_id}/comments")
 def create_comment(post_id: int, data: CommentCreate, db: Session = Depends(get_db)):
+    """Open to anyone! No login required to comment."""
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Artículo no encontrado")
@@ -235,11 +330,15 @@ def create_comment(post_id: int, data: CommentCreate, db: Session = Depends(get_
     db.refresh(comment)
     return comment.to_dict()
 
+# PROTECTED: Only Bibi can create posts
 @app.post("/api/posts")
-def create_post(data: PostCreate, db: Session = Depends(get_db)):
+def create_post(
+    data: PostCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
     import re
     slug = re.sub(r'[^a-zA-Z0-9]+', '-', data.title.lower()).strip('-')
-    # ensure uniqueness
     existing = db.query(Post).filter(Post.slug == slug).first()
     if existing:
         slug = f"{slug}-{uuid.uuid4().hex[:4]}"
@@ -259,8 +358,26 @@ def create_post(data: PostCreate, db: Session = Depends(get_db)):
     db.refresh(post)
     return post.to_dict()
 
+# PROTECTED: Only Bibi can delete posts
+@app.delete("/api/posts/{post_id}")
+def delete_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Artículo no encontrado")
+    db.delete(post)
+    db.commit()
+    return {"message": "Artículo eliminado con éxito"}
+
+# PROTECTED: Only Bibi can upload media files
 @app.post("/api/upload")
-async def upload_media(file: UploadFile = File(...)):
+async def upload_media(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user)
+):
     ext = os.path.splitext(file.filename)[1].lower()
     allowed_images = [".jpg", ".jpeg", ".png", ".webp", ".gif"]
     allowed_videos = [".mp4", ".mov", ".webm", ".mkv"]
@@ -288,4 +405,3 @@ if not os.path.exists(FRONTEND_DIST):
 
 if os.path.exists(FRONTEND_DIST):
     app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
-
