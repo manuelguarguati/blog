@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: bibi_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: bibi
+      POSTGRES_PASSWORD: bibipassword
+      POSTGRES_DB: bibidb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bibi_backend
+    restart: always
+    environment:
+      - DATABASE_URL=postgresql://bibi:bibipassword@db:5432/bibidb
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/uploads:/app/uploads
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
