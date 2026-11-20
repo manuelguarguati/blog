@@ -1,9 +1,3 @@
-databases:
-  - name: bibi-db
-    databaseName: bibidb
-    user: bibiuser
-    plan: free
-
 services:
   # Backend Web Service (FastAPI + Docker)
   - type: web
@@ -14,9 +8,7 @@ services:
     plan: free
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: bibi-db
-          property: connectionString
+        value: postgresql://neondb_owner:npg_QRpKfD5P2NbX@ep-tiny-voice-bey0v8h3-pooler.c-9.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 
   # Frontend Static Site (React + Vite)
   - type: web
